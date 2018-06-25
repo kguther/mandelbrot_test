@@ -1,0 +1,241 @@
+#include "mandelbrot.h"
+#include "ui_mandelbrot.h"
+#include "QPainter"
+#include "QLineEdit"
+#include "math.h"
+#include "QColor"
+#include "complex"
+#include "QMouseEvent"
+#include <iostream>
+
+double min(double a, double b) //required somewhere
+{
+    if(a<b)
+        return a;
+    else
+        return b;
+}
+
+mandelbrot::mandelbrot(QWidget *parent) : //constructor for mainWindow
+    QWidget(parent),
+    ui(new Ui::mandelbrot)
+{
+    ui->setupUi(this);
+    boundary[0]=-3.0; //initial boundary
+    boundary[1]=1.0;
+    boundary[2]=-1.5;
+    boundary[3]=1.5;
+    h=height();
+    w=width();
+    resx=w; //resolution: initial window size
+    resy=h;
+    ref=resx/static_cast<double>(resy); //x-y-proportion
+    drawFocus=0;
+    newData=1;
+    getMandelbrotData();
+}
+
+void mandelbrot::setboundary(double a, double b, double c, double d) //assigns new complex boundaries using window coordinates
+{
+    double store;
+    store=boundary[1]-boundary[0];
+    boundary[1]=b*store/static_cast<double>(w)+boundary[0];
+    boundary[0]+=a*store/static_cast<double>(w);
+    store=boundary[3]-boundary[2];
+    boundary[3]=d*store/static_cast<double>(h)+boundary[2];
+    boundary[2]+=c*store/static_cast<double>(h);
+}
+
+QColor mandelbrot::palette(int i) //basic coloring function
+{
+    QColor pal;
+    i=i%768;
+    int r=0,g=0,b=0;
+    if(i>=512)
+    {
+        r=i-512;
+        g=255-r;
+    }
+    else if(i>=256)
+    {
+        g=i-256;
+        b=255-g;
+    }
+    else
+        b=i;
+    pal.setRgb(r,g,b);
+    return pal;
+}
+
+QColor mandelbrot::smoothcol(double col) //smooth coloring function
+{
+    QColor smcol;
+    int numcol=768;
+    double r,g,b;
+    int cl1=floor(col);
+    double pr1=col-cl1;
+    double pr2=1-pr1;
+    cl1=cl1%numcol;
+    int cl2=(cl1+1)%numcol;
+    r=palette(cl1).redF()*pr1+pr2*palette(cl2).redF();
+    g=palette(cl1).greenF()*pr1+pr2*palette(cl2).greenF();
+    b=palette(cl1).blueF()*pr1+pr2*palette(cl2).blueF();
+    smcol.setRgbF(r,g,b);
+    return smcol;
+}
+
+void mandelbrot::getMandelbrotData()
+{
+        h=height();
+        w=width();
+        std::complex<double> z=0.;
+        std::complex<double> c;
+        double nu;
+        int const iter=30;
+        xCoords.clear();
+        yCoords.clear();
+        colors.clear();
+        QColor color;
+        for(int n=0;n<=resx-1;n++)
+        {
+            for(int j=0;j<=resy-1;j++)
+            {
+                z=0;
+                xCoords.push_back((w*n)/(resx));
+                yCoords.push_back((h*j)/(resy));
+                c=boundary[0]+(boundary[1]-boundary[0])/static_cast<double>(resx)*n+boundary[2]*1i+(boundary[3]-boundary[2])/static_cast<double>(resy)*j*1i;
+                for(int m=1;m<=iter;m++)
+                {
+                    z=z*z+c; //main computation
+                    if(abs(z)>2)
+                    {
+                        nu=m+1-log(log(abs(z)))/log(2); //input for smooth coloring
+                        nu=nu/250*768; //scaling for better visualization
+                        color=smoothcol(nu);
+                        break;
+                    }
+                    color.setRgb(255,255,255); //color for points inside mandelbrot set
+                }
+                colors.push_back(color);
+            }
+        }
+        newData=1;
+        update();
+}
+
+void mandelbrot::paintEvent(QPaintEvent *) //paints the picutre
+{
+    QPainter painter(this);
+    QPen pen;
+    if(drawFocus)
+    {
+        QRect focus();
+    }
+    if(newData)
+    {
+        drawFocus=0;
+        for(unsigned int i=0;i<colors.size();++i)
+        {
+            pen.setColor(colors[i]);
+            painter.setPen(pen);
+            painter.drawPoint(xCoords[i],yCoords[i]);
+        }
+    }
+    newData=1;
+}
+
+void mandelbrot::mousePressEvent(QMouseEvent *event) //left click: activate window selection, right click: center image
+{
+    QPoint current=event->pos();
+    double x,y;
+    x=static_cast<double>(current.x());
+    y=static_cast<double>(current.y());
+    if(event->button()==Qt::LeftButton)
+    {
+        zoom[0]=x;
+        zoom[1]=y;
+        setMouseTracking(true);
+        drawFocus=1;
+    }
+    else
+    {
+        double windowsize;
+        windowsize=min(min(x,w-x)/ref,min(y,h-y));
+        setboundary(x-ref*windowsize/2.0,x+ref*windowsize/2.0,y-windowsize/2.0,y+windowsize/2.0);
+        getMandelbrotData();
+    }
+}
+
+void mandelbrot::mouseMoveEvent(QMouseEvent *event) //paint focus window
+{
+  QPoint current=event->pos();
+  double corners[4];
+  setZoom(current.x(),current.y(),corners);
+  
+}
+
+void mandelbrot::mouseReleaseEvent(QMouseEvent *event) //on release: leave window selection and zoom in
+{
+    if(event->button()==Qt::LeftButton)
+    {
+    QPoint current=event->pos();
+    setZoom(current.x(),current.y(),zoom);
+    setboundary(zoom[0],zoom[2],zoom[1],zoom[3]);
+    getMandelbrotData();
+    }
+}
+
+void mandelbrot::setZoom(double x, double y, double *target)
+{
+    double store;
+    zoom[2]=static_cast<double>(x);
+    zoom[3]=static_cast<double>(y);
+    if(zoom[2]<zoom[0])
+    {
+       store=zoom[2];
+       target[2]=zoom[0];
+       target[0]=store;
+    }
+    if(zoom[3]<zoom[1])
+    {
+       store=zoom[1];
+       target[1]=zoom[3];
+       target[3]=store;
+    }
+}
+
+mandelbrot::~mandelbrot()
+{
+    delete ui;
+}
+
+void mandelbrot::on_refresh_clicked() //control buttons
+{
+    boundary[0]=-3;
+    boundary[1]=1;
+    boundary[2]=-1.5;
+    boundary[3]=1.5;
+    getMandelbrotData();
+ }
+
+void mandelbrot::on_zoom_in_clicked()
+{
+    double save=boundary[1]-boundary[0];
+    boundary[0]+=save/3.0;
+    boundary[1]-=save/3.0;
+    save=boundary[3]-boundary[2];
+    boundary[2]+=save/3.0;
+    boundary[3]-=save/3.0;
+    getMandelbrotData();
+}
+
+void mandelbrot::on_zoom_out_clicked()
+{
+    double save=boundary[1]-boundary[0];
+    boundary[0]-=save;
+    boundary[1]+=save;
+    save=boundary[3]-boundary[2];
+    boundary[2]-=save;
+    boundary[3]+=save;
+    getMandelbrotData();
+}
